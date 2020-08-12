@@ -127,4 +127,13 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Experiment logs:
 logs_glann_causal_chain/
+
+# LaTeX
+latex/latex_aux/
+*.synctex.gz
+latex/*.out
+latex/*.log
+latex/*.aux
