@@ -106,3 +106,8 @@ def get_device(model: nn.Module):
         return next(model.parameters()).device
     except:
         return "cpu"
+
+
+def linregress(A: torch.Tensor, b: torch.Tensor):
+    with torch.no_grad():
+        return torch.pinverse(A) @ b

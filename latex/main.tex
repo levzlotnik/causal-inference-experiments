@@ -51,13 +51,13 @@ We engineer the model loss accordingly:
 	\item \textbf{Chain}, \textbf{Fork} both get the same loss of 
 	$L_{indep} := C_{ij}C_{jk} \cdot Corr^2(x_i, x_k | x_j)$ 
 	\item \textbf{Collider} gets a loss of marginal correlation 
-	$L_{indep} := C_{ij}C_{jk} \cdot Corr^2(x_i, x_k)$ 
+	$L_{indep} := Corr^2(x_i, x_k)$ 
 \end{itemize}
 And including all terms in, the total independence loss takes the form:
 \begin{equation}
-	L_{independence} = \sum_{i, j, k} \EE_x \left[C_{ij}C_{jk} \cdot Corr^2(x_i, x_k | x_j) + C_{ij}C_{jk} \cdot Corr^2(x_i, x_k)\right]
+	L_{independence} = \sum_{i, j, k} \EE_x \left[C_{ij}C_{jk} \cdot Corr^2(x_i, x_k | x_j) + Corr^2(x_i, x_k)\right]
 \end{equation}
-\todo{\textbf{Lev}: TODO - Implement.}
+\todo{\textbf{Lev}: TODO Implement.}
 \par
 
 Finally, there are constraints on the structure of $C$.
