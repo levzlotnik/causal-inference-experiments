@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from scipy.stats import spearmanr, kendalltau
 import numpy as np
-from common import get_data, normalize_data, get_device, linregress, RangeLogger
+from common import get_data, normalize_data, get_device, linregress, RangeLogger, matrix2list
 import torch
 import torch.nn as nn
 from torch.optim import SGD, Adam
@@ -314,7 +314,7 @@ def train_glann_causality_chain(X: torch.Tensor, model: GLANN,
                           name="stage3(causality_chain)",
                           N_samples=100,
                           epochs=stage_epochs[2], writer=writer)
-    print(f'C = \n {causal_chain_glann.C.cpu().numpy()}')
+    print(f'C = \n {matrix2list(causal_chain_glann.C.cpu().numpy())}')
 
 
 DEVICE = 'cuda:0'
