@@ -214,8 +214,7 @@ def train_glo(X: torch.Tensor, model: GLO, criterion, name: str,
     model = model.to(X.device)
     end_loss = float('inf')
     t = RangeLogger(epochs)
-    t.on_start(f'Training: [{name}] \t')
-    for i in t.range:
+    for i in t:
         optimizer.zero_grad()
         X_pred = model()
         loss, loss_terms_dict = criterion(X_pred, X)
@@ -229,7 +228,6 @@ def train_glo(X: torch.Tensor, model: GLO, criterion, name: str,
             loss_terms_dict = loss_terms_dict or {}
             for k, v in loss_terms_dict.items():
                 writer.add_scalar(f'{name}/{k}', v.item(), i)
-    t.on_end(f'loss = {end_loss}')
     return end_loss
 
 
@@ -240,8 +238,7 @@ def train_nct(Z: torch.Tensor, model: NoiseCodeTranslator, name,
     model = model.to(Z.device)
     end_loss = float('inf')
     t = RangeLogger(epochs)
-    t.on_start(f'Training: [{name}] \t')
-    for i in t.range:
+    for i in t:
         optimizer.zero_grad()
         Z_pred = model.forward()
         loss, loss_terms_dict = loss_nct(Z_pred, Z)
@@ -255,7 +252,6 @@ def train_nct(Z: torch.Tensor, model: NoiseCodeTranslator, name,
             loss_terms_dict = loss_terms_dict or {}
             for k, v in loss_terms_dict.items():
                 writer.add_scalar(f'{name}/{k}', v.item(), i)
-    t.on_end(f'loss = {end_loss}')
     return end_loss
 
 
@@ -268,8 +264,7 @@ def train_causality_chain(X: torch.Tensor, model: CausalityChainModel, name: str
     model = model.to(X.device)
     end_loss = float('inf')
     t = RangeLogger(epochs)
-    t.on_start(f'Training: [{name}] \t')
-    for i in t.range:
+    for i in t:
         optimizer.zero_grad()
         loss, loss_terms_dict = model.forward(X, N_samples)
         t.set_description(f'Training: [{name}] \t loss={loss.item():.3e}')
@@ -282,7 +277,6 @@ def train_causality_chain(X: torch.Tensor, model: CausalityChainModel, name: str
             loss_terms_dict = loss_terms_dict or {}
             for k, v in loss_terms_dict.items():
                 writer.add_scalar(f'{name}/{k}', v.item(), i)
-    t.on_end(f'loss = {end_loss}')
     return end_loss
 
 
@@ -320,6 +314,7 @@ def train_glann_causality_chain(X: torch.Tensor, model: GLANN,
                           name="stage3(causality_chain)",
                           N_samples=100,
                           epochs=stage_epochs[2], writer=writer)
+    print(f'C = \n {causal_chain_glann.C.cpu().numpy()}')
 
 
 DEVICE = 'cuda:0'

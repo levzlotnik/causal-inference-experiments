@@ -116,6 +116,9 @@ def linregress(A: torch.Tensor, b: torch.Tensor):
         return torch.pinverse(A) @ b
 
 
+PRINT_EVERY = 100
+
+
 class RangeLogger:
     def __init__(self, *args, **kwargs):
         if platform.system() == 'Windows':
@@ -124,16 +127,17 @@ class RangeLogger:
         else:
             self.range = range(*args, **kwargs)
             self.is_trange = False
+        self.description = ""
 
     def set_description(self, desc):
         if isinstance(self.range, tqdm):
             self.range.set_description(desc)
 
-    def on_start(self, s):
-        if not self.is_trange:
-            print(s, end='', flush=True)
-
-    def on_end(self, s):
-        if not self.is_trange:
-            print(s)
-
+    def __iter__(self):
+        if self.is_trange:
+            yield from self.range
+        else:
+            for x in self.range:
+                if x % PRINT_EVERY == 0:
+                    print(f'[{x} / {len(self.range)}] : {self.description}')
+                yield x
