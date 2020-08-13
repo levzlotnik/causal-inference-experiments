@@ -128,3 +128,12 @@ class RangeLogger:
     def set_description(self, desc):
         if isinstance(self.range, tqdm):
             self.range.set_description(desc)
+
+    def on_start(self, s):
+        if not self.is_trange:
+            print(s, end='', flush=True)
+
+    def on_end(self, s):
+        if not self.is_trange:
+            print(s)
+

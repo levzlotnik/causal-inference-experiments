@@ -264,6 +264,7 @@ def train_causality_chain(X: torch.Tensor, model: CausalityChainModel, name: str
     model = model.to(X.device)
     end_loss = float('inf')
     t = RangeLogger(epochs)
+    t.on_start(f'Training: [{name}] \t')
     for i in t.range:
         optimizer.zero_grad()
         loss, loss_terms_dict = model.forward(X, N_samples)
@@ -277,6 +278,7 @@ def train_causality_chain(X: torch.Tensor, model: CausalityChainModel, name: str
             loss_terms_dict = loss_terms_dict or {}
             for k, v in loss_terms_dict.items():
                 writer.add_scalar(f'{name}/{k}', v.item(), i)
+    t.on_end(f'loss = {end_loss}')
     return end_loss
 
 
