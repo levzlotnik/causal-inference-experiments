@@ -132,6 +132,8 @@ class RangeLogger:
     def set_description(self, desc):
         if isinstance(self.range, tqdm):
             self.range.set_description(desc)
+        else:
+            self.description = desc
 
     def __iter__(self):
         if self.is_trange:
