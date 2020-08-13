@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from scipy.stats import spearmanr, kendalltau
 import numpy as np
-from common import get_data, normalize_data, get_device, linregress
+from common import get_data, normalize_data, get_device, linregress, RangeLogger
 import torch
 import torch.nn as nn
 from torch.optim import SGD, Adam
@@ -143,22 +143,22 @@ def loss_mse(X_pred, X_true):
 
 
 def loss_indep(X: torch.Tensor, C: torch.Tensor):
-    idxs = list(range(X.shape[1]))
     loss = 0.
+    size = X.shape[1]
     cond_corr2 = SquaredConditionalCorrelation()
     corr2 = SquaredCorrelation()
-    for i, j, k in product(idxs, idxs, idxs):
-        if len({i, j, k}) < 3:
-            continue
-        X_i, X_j, X_k = X[:, i], X[:, j], X[:, k]
-        scc = cond_corr2.forward(X_i, X_k, X_j)
-        sc = corr2.forward(X_i, X_k)
-        # Chain Loss
-        loss += C[i, j] * C[j, k] * scc
-        # Fork Loss
-        loss += C[j, i] * C[j, k] * scc
-        # Collider Loss
-        loss += sc
+    for i in range(0, size):
+        for j in range(i, size):
+            for k in range(j, size):
+                X_i, X_j, X_k = X[:, i], X[:, j], X[:, k]
+                scc = cond_corr2.forward(X_i, X_k, X_j)
+                sc = corr2.forward(X_i, X_k)
+                # Chain Loss
+                loss += C[i, j] * C[j, k] * scc
+                # Fork Loss
+                loss += C[j, i] * C[j, k] * scc
+                # Collider Loss
+                loss += sc
 
     return loss
 
@@ -214,8 +214,8 @@ def train_glo(X: torch.Tensor, model: GLO, criterion, name: str,
     lr_scheduler = ReduceLROnPlateau(optimizer, patience=50, factor=0.5)
     model = model.to(X.device)
     end_loss = float('inf')
-    t = trange(epochs)
-    for i in t:
+    t = RangeLogger(epochs)
+    for i in t.range:
         optimizer.zero_grad()
         X_pred = model()
         loss, loss_terms_dict = criterion(X_pred, X)
@@ -238,8 +238,8 @@ def train_nct(Z: torch.Tensor, model: NoiseCodeTranslator, name,
     lr_scheduler = ReduceLROnPlateau(optimizer, patience=50, factor=0.5)
     model = model.to(Z.device)
     end_loss = float('inf')
-    t = trange(epochs)
-    for i in t:
+    t = RangeLogger(epochs)
+    for i in t.range:
         optimizer.zero_grad()
         Z_pred = model.forward()
         loss, loss_terms_dict = loss_nct(Z_pred, Z)
@@ -264,8 +264,8 @@ def train_causality_chain(X: torch.Tensor, model: CausalityChainModel, name: str
     lr_scheduler = ReduceLROnPlateau(optimizer, patience=50, factor=0.5)
     model = model.to(X.device)
     end_loss = float('inf')
-    t = trange(epochs)
-    for i in t:
+    t = RangeLogger(epochs)
+    for i in t.range:
         optimizer.zero_grad()
         loss, loss_terms_dict = model.forward(X, N_samples)
         t.set_description(f'Training: [{name}] \t loss={loss.item():.3e}')
@@ -313,7 +313,7 @@ def train_glann_causality_chain(X: torch.Tensor, model: GLANN,
     causal_chain_glann = CausalityChainModel(X.shape[1], model, **weights_dict)
     train_causality_chain(X, causal_chain_glann,
                           name="stage3(causality_chain)",
-                          N_samples=3000,
+                          N_samples=100,
                           epochs=stage_epochs[2], writer=writer)
 
 

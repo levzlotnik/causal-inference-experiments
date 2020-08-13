@@ -8,6 +8,9 @@ from networkx import (
 )
 from cdt.data import load_dataset
 import pandas as pd
+import os
+from tqdm import tqdm, trange
+import platform
 
 
 def matrix2list(mat):
@@ -111,3 +114,17 @@ def get_device(model: nn.Module):
 def linregress(A: torch.Tensor, b: torch.Tensor):
     with torch.no_grad():
         return torch.pinverse(A) @ b
+
+
+class RangeLogger:
+    def __init__(self, *args, **kwargs):
+        if platform.system() == 'Windows':
+            self.range = trange(*args, **kwargs)
+            self.is_trange = True
+        else:
+            self.range = range(*args, **kwargs)
+            self.is_trange = False
+
+    def set_description(self, desc):
+        if isinstance(self.range, tqdm):
+            self.range.set_description(desc)
