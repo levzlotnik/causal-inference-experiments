@@ -147,8 +147,8 @@ def loss_indep(X: torch.Tensor, C: torch.Tensor):
     cond_corr2 = SquaredConditionalCorrelation()
     corr2 = SquaredCorrelation()
     for i in range(0, size):
-        for j in range(i, size):
-            for k in range(j, size):
+        for j in range(i+1, size):
+            for k in range(j+1, size):
                 X_i, X_j, X_k = X[:, i], X[:, j], X[:, k]
                 scc = cond_corr2.forward(X_i, X_k, X_j)
                 sc = corr2.forward(X_i, X_k)
