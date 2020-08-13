@@ -8,7 +8,6 @@ import torch.nn as nn
 from torch.optim import SGD, Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.tensorboard import SummaryWriter
-from tqdm import trange
 from cdt.data import load_dataset
 from collections import deque, defaultdict
 from itertools import chain
