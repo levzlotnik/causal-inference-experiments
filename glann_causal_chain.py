@@ -214,6 +214,7 @@ def train_glo(X: torch.Tensor, model: GLO, criterion, name: str,
     model = model.to(X.device)
     end_loss = float('inf')
     t = RangeLogger(epochs)
+    t.on_start(f'Training: [{name}] \t')
     for i in t.range:
         optimizer.zero_grad()
         X_pred = model()
@@ -228,6 +229,7 @@ def train_glo(X: torch.Tensor, model: GLO, criterion, name: str,
             loss_terms_dict = loss_terms_dict or {}
             for k, v in loss_terms_dict.items():
                 writer.add_scalar(f'{name}/{k}', v.item(), i)
+    t.on_end(f'loss = {end_loss}')
     return end_loss
 
 
@@ -238,6 +240,7 @@ def train_nct(Z: torch.Tensor, model: NoiseCodeTranslator, name,
     model = model.to(Z.device)
     end_loss = float('inf')
     t = RangeLogger(epochs)
+    t.on_start(f'Training: [{name}] \t')
     for i in t.range:
         optimizer.zero_grad()
         Z_pred = model.forward()
@@ -252,6 +255,7 @@ def train_nct(Z: torch.Tensor, model: NoiseCodeTranslator, name,
             loss_terms_dict = loss_terms_dict or {}
             for k, v in loss_terms_dict.items():
                 writer.add_scalar(f'{name}/{k}', v.item(), i)
+    t.on_end(f'loss = {end_loss}')
     return end_loss
 
 
