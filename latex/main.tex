@@ -9,6 +9,7 @@
 \setlength{\parskip}{4pt}
 \DeclareMathOperator{\softmax}{softmax}
 \DeclareMathOperator{\Corr}{Corr}
+\DeclareMathOperator{\xnor}{xnor}
 \usepackage[margin=1.2in]{geometry}
 \newcommand{\RR}{\mathbb{R}}
 \newcommand{\EE}{\mathbb{E}}
@@ -18,128 +19,126 @@
 \date{August 2020}
 
 \begin{document}
-
-\maketitle
-
-\section{Architecture}
-
-Given a dataset of unlabeled samples $\{x\in \mathbb{R}^d\}$, we would like to order the coordinates $1..d$ using some permutation $\pi$ such that if $\pi(i)<\pi(j)$ then variable (coordinate) $i$ causes variable $j$.
-
-We train a GLANN \cite{GLANN} architecture that will allow us to sample new data from the exact same distribution:
-\begin{equation}
+	
+	\maketitle
+	
+	\section{Architecture}
+	
+	Given a dataset of unlabeled samples $\{x\in \mathbb{R}^d\}$, we would like to order the coordinates $1..d$ using some permutation $\pi$ such that if $\pi(i)<\pi(j)$ then variable (coordinate) $i$ causes variable $j$.
+	
+	We train a GLANN \cite{GLANN} architecture that will allow us to sample new data from the exact same distribution:
+	\begin{equation}
 	x = G(z),\, z \sim T(e), \, e \sim \mathcal U ([0,1]^h)
-\end{equation}
-such that $e \in \RR^{h}, z \in \RR^{l}$ and $h < l <d$.
-We use a regular MSE loss $l(x, \tilde x) = \| x - \tilde x \|_2^2$ instead of GLANN's \cite{GLANN} proposed "perceptual loss" because our data is tabular. 
-During training we also recover a matrix $C$ such that
-  \begin{equation}
-    C_{ij} =  \begin{cases} 1 &\mbox{if } \pi(i)<\pi(j) \\
-0 & \mbox{otherwise} \end{cases}
-  \end{equation}
-\section{Loss terms}
-We consider 3 causality classes:
-\begin{itemize}
-    \item \textbf{Chain} $x_i \to x_j \to x_k$
-    \item \textbf{Fork} $x_i \leftarrow x_j \rightarrow x_k$
-    \item \textbf{Collider} $x_i \rightarrow x_j \leftarrow x_k$
-\end{itemize}
-These cases are classically used in Bayesian Network inference. The basic assumptions are that in both \textbf{Chain} and \textbf{Fork} cases - $x_i, x_k$ are conditionally independent, given $x_j$. The \textbf{Collider}, however, guarantees that $x_i, x_k$ are marginally independent. \\
-We would like to create a constraint that allows the model learn the connections from the data, with respect to the causality networks classes. \\
-For that we use the Squared Conditional Correlation (SCC) for all \textbf{Forks} and \textbf{Chain}, and Squared Correlation (SC) for all \textbf{Colliders}. By minimizing these term we try to ensure that each three variables are to fall into their respective causal class. \footnote{Similarly - instead of using squared correlation we could use Mutual Information} \par
-We engineer the model loss accordingly:
-\begin{itemize}
-	\item \textbf{Chain}, \textbf{Fork} both get the same loss of 
-	$L_{indep} := C_{ij}C_{jk} \cdot Corr^2(x_i, x_k | x_j)$ 
-	\item \textbf{Collider} gets a loss of marginal correlation 
-	$L_{indep} := Corr^2(x_i, x_k)$ 
-\end{itemize}
-And including all terms in, the total independence loss takes the form:
-\begin{equation}
-	L_{independence} = \sum_{i, j, k} \EE_x \left[C_{ij}C_{jk} \cdot Corr^2(x_i, x_k | x_j) + Corr^2(x_i, x_k)\right]
-\end{equation}
-\todo{\textbf{Lev}: TODO Implement.}
-\par
-
-Finally, there are constraints on the structure of $C$.
-During optimization we make sure that $0 \leq C_{ij} \leq 1$ for all $(i,j)$.
-Later on we can add terms to encourage the values to be either one or zero.
-
-We cut the number of parameters by half by setting
-$$C_{ji} = 1-C_{ij}$$ for all $i<j$.
-
-We then enforce transitivity via a loss term
-$$L_\text{trans} = \sum_{i\neq j, j\neq k, i\neq k} (C_{ij}C_{jk})(1-C_{ik})$$
-
-\section{Efficient computation of the transitivity constraint}
-
-The transitivity constraints has $O(d^3)$, requiring an efficient computation
-\todo{\textbf{Lev}: it's still $O(d^3)$, at best $O(d^{2.807})$. It's just simplified.}. We therefore express it in a matrix multiplication form.
-
-First, we note that $1 - C_{ik}$ is just $C_{ki}$.
-\begin{align*}
-    L_{\text{trans}} & =
-    \sum_i
-    \sum_{j \ne i}
-    \sum_{\substack{k \ne i \\ k \ne j}} (C_{ij}C_{jk})(1-C_{ik})\\
-    & =
-    \sum_i
-    \sum_{j \ne i}
-    \sum_{\substack{k \ne i \\ k \ne j}} C_{ij}C_{jk}C_{ki} =
-    \sum_i
-    \sum_{j \ne i} C_{ij} \left(
-    \sum_{\substack{k \ne i \\ k \ne j}}C_{jk}C_{ki} \right) \\
-    & =
-    \sum_{i \ne j} C_{ij} \left(
-    \sum_k C_{jk} C_{ki} - C_{jj}C_{ji} - C_{ji} C_{ii}
-    \right)
-\end{align*}
-However, from the definition of the connection matrix $C$, we have $C_{ii} = C_{jj} = 0$ and so the rightmost terms vanish and we are left with a simpler
-\begin{align*}
-    L_{\text{trans}} & =
-    \sum_{i \ne j} C_{ij}
-    \sum_{k=1}^n C_{jk} C_{ki}
-\end{align*}
-The rightmost sum is actually an expression for matrix multiplication:
-
-\begin{align*}
-    L_{\text{trans}} & =
-    \sum_{i \ne j} C_{ij}
-    \sum_{k=1}^n C_{jk} C_{ki} \\
-    & =
-    %\sum_{i \ne j} C_{ij} \cdot (C \cdot C)_{ji} =
-    \sum_{i \ne j} C_{ij} \cdot (C^2)_{ji} \\
-    & =
-    \sum_{i, j} (C^2 \odot C^T)_{ij}
-\end{align*}
-where $\odot$ stands for element-wise multiplication (Hadamard product) and $i \ne j$ is removed since $C_{ii} = 0$.
-
-\section{Modeling the connectivity matrix}
-
-The connection matrix is constructed "softly", using a softmax trick on some parameter matrix $C'$:
-\begin{gather*}
-    C'_{ij} \sim \mathcal{N}(0, 1) \\
-    C_{ij} = \softmax (C'_{ij}, C'_{ji})
-\end{gather*}
-where we take the first term in the softmax which corresponds to the normalized exponent of $C'_{ij}$.
-In our case - causality loss acts as an objective loss in our domain, while transitive loss acts as a regularization loss on the connection matrix C.
-
-\section{Inferring order}
-
-Recall that $C_{ij}$ indicates if $\pi(i)<\pi(j)$. The first in order (root cause) would be smaller than anyone else. More generally, the order is determined by sorting the following causal score
-$$s_i = \sum_{j\neq i} C_{ij}$$
-The higher the score $s_i$ , the earlier the $i$-th variable is in the causal order.
-
-
-
-\newpage
-\begin{thebibliography}{1}
+	\end{equation}
+	such that $e \in \RR^{h}, z \in \RR^{l}$ and $h < l <d$.
+	We use a regular MSE loss $l(x, \tilde x) = \| x - \tilde x \|_2^2$ instead of GLANN's \cite{GLANN} proposed "perceptual loss" because our data is tabular. 
+	During training we also recover a matrix $C$ such that
+	\begin{equation}
+	C_{ij} =  \begin{cases} 1 &\mbox{if } \pi(i)<\pi(j) \\
+	0 & \mbox{otherwise} \end{cases}
+	\end{equation}
+	\section{Loss terms}
+	We consider 3 causality classes:
+	\begin{itemize}
+		\item \textbf{Chain} $x_i \to x_j \to x_k$
+		\item \textbf{Fork} $x_i \leftarrow x_j \rightarrow x_k$
+		\item \textbf{Collider} $x_i \rightarrow x_j \leftarrow x_k$
+	\end{itemize}
+	These cases are classically used in Bayesian Network inference. The basic assumptions are that in both \textbf{Chain} and \textbf{Fork} cases - $x_i, x_k$ are conditionally independent, given $x_j$. The \textbf{Collider}, however, guarantees that $x_i, x_k$ are marginally independent. \\
+	We would like to create a constraint that allows the model learn the connections from the data, with respect to the causality networks classes. \\
+	For that we use the Squared Conditional Correlation (SCC) for all \textbf{Forks} and \textbf{Chain}, and Squared Correlation (SC) for all \textbf{Colliders}. By minimizing these term we try to ensure that each three variables are to fall into their respective causal class. \footnote{Similarly - instead of using squared correlation we could use Mutual Information} \par
+	However - we want to force the model to learn that either the variables are correlated \textbf{or} they are disconnected. We introduce a "xnor logic gate loss" that forces one of its terms to 1 and the other to 0:
+	\begin{equation*}
+	\xnor(a; b) = |1 - a - b - a \cdot b|
+	\end{equation*}
+	For this function to evaluate to 0 - one of these variables has to be equal to 1 while the other one has to be equal to 0. It essentially represents a distance of two variables from being mutual exclusive. \\
+	Using these prerequisites, we engineer the model loss accordingly:
+	\begin{itemize}
+		\item \textbf{Chain}, \textbf{Fork} both get the same loss of 
+		$L_{indep} := \xnor(C_{ij}C_{jk}; Corr^2(x_i, x_k | x_j))$ 
+		\item \textbf{Collider} gets a loss of marginal correlation 
+		$L_{indep} := Corr^2(x_i, x_k)$ 
+	\end{itemize}
+	However, a causal connection cannot be classified as both \textbf{Fork} / \textbf{Chain} and a \textbf{Collider}.In this case we also add a constraint between \textbf{Fork} / \textbf{Chain} and \textbf{Collider} in a form of "and logic gate", which is just a multiplication of both terms. \\
+	In the end, we're left with:
+	\begin{equation}
+	L_{independence} = \sum_{i, j, k} \EE_x \left[
+	\xnor((C_{ij} + C_{ji})C_{jk}; Corr^2(x_i, x_k | x_j))\cdot Corr^2(x_i, x_k)
+	\right]
+	\end{equation}
+	\par
 	
-	\bibitem{GLANN}
-	Yedid Hoshen, Jitendra Malik. \textit{Non-Adversarial Image Synthesis with Generative Latent Nearest Neighbors}.  \href{https://arxiv.org/abs/1812.08985}{https://arxiv.org/abs/1812.08985}
+	Finally, there are constraints on the structure of $C$.
+	During optimization we make sure that $0 \leq C_{ij} \leq 1$ for all $(i,j)$.
+	Later on we can add terms to encourage the values to be either one or zero.
 	
-\end{thebibliography}
-
-
-
+	We then enforce transitivity via a loss term
+	$$L_\text{trans} = \sum_{i\neq j, j\neq k, i\neq k} (C_{ij}C_{jk})(1-C_{ik})$$
+	
+	\section{Efficient computation of the transitivity constraint}
+	
+	The transitivity constraints has $O(d^3)$, requiring an efficient computation
+	\todo{\textbf{Lev}: it's still $O(d^3)$, at best $O(d^{2.807})$. It's just simplified.}. We therefore express it in a matrix multiplication form.
+	
+	First, we note that $1 - C_{ik}$ is just $C_{ki}$.
+	\begin{align*}
+	L_{\text{trans}} & =
+	\sum_k
+	\sum_{i \ne k}
+	\sum_{\substack{j \ne i \\ j \ne k}} (C_{ij}C_{jk})(1-C_{ik})\\
+	& =
+	\sum_k
+	\sum_{i \ne k}(1 - C_{ik}) \left(
+	\sum_{j} C_{ij} C_{jk} - C_{ii}C_{ik} - C_{ik}C_{kk} 
+	\right)
+	\end{align*}
+	However, from the definition of the connection matrix $C$, we have $C_{ii} = C_{kk} = 0$ and so the rightmost terms vanish and we are left with a simpler
+	\begin{align*}
+	L_{\text{trans}} & =
+	\sum_{i \ne k} (1 - C_{ik})
+	\sum_{j=1}^n C_{ij} C_{jk}
+	\end{align*}
+	The rightmost sum is actually an expression for matrix multiplication:
+	
+	\begin{align*}
+	L_{\text{trans}} & =
+	\sum_{i \ne k} (1 - C_{ik})
+	\sum_{j=1}^n C_{ij} C_{jk} \\
+	& =
+	\sum_{i \ne k} (1 - C_{ik})
+	(C^2)_{ik} \\
+	& =
+	\sum_{i, j} (C^2)_{ij} (1-C_{ij})
+	\end{align*}
+	where $i \ne j$ is removed since $C_{ii} = 0$.
+	
+	\section{Modeling the connectivity matrix}
+	
+	The connection matrix is constructed "softly", using a sigmoid on some parameter matrix $C'$:
+	\begin{gather*}
+	C'_{ij} \sim \mathcal{N}(0, 1) \\
+	C_{ij} = \sigma(C'_{ij}), 
+	\end{gather*}
+	where $\sigma$ is the sigmoid function.
+	In our case - independence loss acts as an objective loss in our domain, while transitive loss acts as a regularization loss on the connection matrix C.
+	
+	\section{Inferring order}
+	
+	Recall that $C_{ij}$ indicates if $\pi(i)<\pi(j)$. The first in order (root cause) would be smaller than anyone else. More generally, the order is determined by sorting the following causal score
+	$$s_i = \sum_{j\neq i} C_{ij}$$
+	The higher the score $s_i$ , the earlier the $i$-th variable is in the causal order.
+	
+	
+	
+	\newpage
+	\begin{thebibliography}{1}
+		
+		\bibitem{GLANN}
+		Yedid Hoshen, Jitendra Malik. \textit{Non-Adversarial Image Synthesis with Generative Latent Nearest Neighbors}.  \href{https://arxiv.org/abs/1812.08985}{https://arxiv.org/abs/1812.08985}
+		
+	\end{thebibliography}
+	
+	
+	
 \end{document}
 

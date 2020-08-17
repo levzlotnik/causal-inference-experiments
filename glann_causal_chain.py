@@ -2,19 +2,20 @@ import os
 from datetime import datetime
 from scipy.stats import spearmanr, kendalltau
 import numpy as np
-from common import get_data, normalize_data, get_device, linregress, RangeLogger, matrix2list
+from common import (
+    get_data, normalize_data,
+    get_device, linregress,
+    RangeLogger, matrix2list,
+    xnor
+)
 import torch
 import torch.nn as nn
 from torch.optim import SGD, Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.tensorboard import SummaryWriter
-from cdt.data import load_dataset
-from collections import deque, defaultdict
-from itertools import chain
-from networkx import DiGraph, relabel_nodes
 import pandas as pd
 from copy import deepcopy
-from itertools import product
+from argparse import ArgumentParser
 
 
 class LinearGenerator(nn.Module):
@@ -75,8 +76,8 @@ class GLANN(nn.Module):
 
 class SquaredCorrelation(nn.Module):
     def forward(self, X: torch.Tensor, Y: torch.Tensor):
-        dX, dY = X - X.mean(), Y - Y.mean()
-        return (torch.sum(dX * dY)**2) / (torch.sum(dX**2) * torch.sum(dY**2))
+        dX, dY = X - X.mean(dim=-1, keepdim=True), Y - Y.mean(dim=-1, keepdim=True)
+        return (torch.sum(dX * dY, dim=-1)**2) / (torch.sum(dX**2, dim=-1) * torch.sum(dY**2, dim=-1))
 
 
 class SquaredConditionalCorrelation(nn.Module):
@@ -104,8 +105,7 @@ class ConnectivityMatrix(nn.Module):
         self.register_buffer('mask', 1 - torch.eye(size))
 
     def forward(self):
-        C_logits = torch.stack([self.logits_matrix, self.logits_matrix.t()], dim=0)
-        C = C_logits.softmax(dim=0)[0] * self.mask
+        C = torch.sigmoid(self.logits_matrix) * self.mask
         return C
 
 
@@ -117,11 +117,11 @@ def loss_transitivity(C: torch.Tensor):
       $
     We simplify it to:
       $
-        L_{trans} = \sum_{i, j} (C^2 \odot C^T)_{ij}
+        L_{trans} = \sum_{i, j} (C^2 \odot (1 - C))_{ij}
       $
     """
     C2 = C @ C
-    return torch.sum(C2 * C.t())
+    return torch.sum(C2 * (1 - C))
 
 
 def loss_nct(Z_pred: torch.Tensor, Z: torch.Tensor):
@@ -141,24 +141,52 @@ def loss_mse(X_pred, X_true):
     return nn.MSELoss()(X_pred, X_true), None
 
 
+# def loss_indep(X: torch.Tensor, C: torch.Tensor):
+#     batch_size, cols_size = X.shape
+#     corr2 = SquaredCorrelation()
+#     X_t = X.t()
+#     # We do linear regression: X_lhs ~= X_rhs @ params
+#     X_rhs = X_t.expand(cols_size, cols_size, batch_size)
+#     X_lhs = X_rhs.transpose(0, 1)
+#     X_rhs = torch.stack([X_rhs, torch.ones_like(X_rhs)], dim=-1)
+#     X_rhs = X_rhs.reshape(-1, batch_size, 2)
+#     X_lhs = X_lhs.reshape(-1, batch_size, 1)
+#     linregress_result = linregress(X_rhs, X_lhs)
+#     X_lhs_pred = X_rhs @ linregress_result
+#     R_data = (X_lhs - X_lhs_pred).reshape(cols_size, cols_size, batch_size)  # residuals
+#     X_data = X_lhs.reshape(cols_size, cols_size, batch_size)  # actual columns
+#     R_data_expanded = R_data.unsqueeze(2).expand(-1, -1, cols_size, -1)
+#     R_data_expanded_t = R_data_expanded.transpose(0, 1)
+#     scc_tensor = corr2(R_data_expanded, R_data_expanded_t)  # SCC[i,j,k] = CondCorr^2(X_i, X_j | X_k)
+#     sc_matrix = corr2(X_data, X_data.transpose(0, 1))       # SC[i,j] = Corr^2(X_i, X_j)
+#     C_ijk = C.unsqueeze(-1).expand(cols_size, cols_size, cols_size) # C_expd[i, j, k] = C[i, j]
+#     C_ik, C_kj = C_ijk.transpose(1, 2), C_ijk.transpose(0, 2)
+#     C_ki = C_ik.transpose(0, 1)
+#     D = (C_ki + C_ik) * C_kj
+#     weighted_scc = xnor(D, scc_tensor)
+#     weighted_indep = xnor(weighted_scc, sc_matrix)
+#     non_nan_vals = torch.where(torch.isnan(weighted_indep), torch.tensor(0., device=X.device), weighted_indep)
+#     loss = torch.mean(non_nan_vals)
+#     return loss
+
+
 def loss_indep(X: torch.Tensor, C: torch.Tensor):
     loss = 0.
     size = X.shape[1]
     cond_corr2 = SquaredConditionalCorrelation()
     corr2 = SquaredCorrelation()
-    for i in range(0, size):
-        for j in range(i+1, size):
-            for k in range(j+1, size):
+    for i in range(size):
+        for j in range(size):
+            if j == i:
+                continue
+            for k in range(size):
+                if k in [i, j]:
+                    continue
                 X_i, X_j, X_k = X[:, i], X[:, j], X[:, k]
                 scc = cond_corr2.forward(X_i, X_k, X_j)
                 sc = corr2.forward(X_i, X_k)
                 # Chain Loss
-                loss += C[i, j] * C[j, k] * scc
-                # Fork Loss
-                loss += C[j, i] * C[j, k] * scc
-                # Collider Loss
-                loss += sc
-
+                loss += xnor((C[i, j] + C[j, i]) * C[j, k], scc) * sc
     return loss
 
 
@@ -353,6 +381,13 @@ def create_writer():
     EXPERIMENT_LOGDIR = f'logs_{os.path.basename(__file__)[:-3]}/{DATASET}.{datetime.now():%Y-%m-%d.%H-%M}'
     print(f"tensorboard: run 'tensorboard --logdir={'/'.join(EXPERIMENT_LOGDIR.split('/')[:-1])}'")
     return SummaryWriter(log_dir=EXPERIMENT_LOGDIR)
+
+
+def parse_args():
+    parser = ArgumentParser()
+    parser.add_argument('-d', '--dataset', choices=('synthetic', 'sachs'), default='synthetic',
+                        help='Which dataset to use.')
+    parser.add_argument('--gpu', default=0, type=int, help='Which gpu to use.')
 
 
 def main():

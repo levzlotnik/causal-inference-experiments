@@ -143,3 +143,8 @@ class RangeLogger:
                 if x % PRINT_EVERY == 0:
                     print(f'[{x} / {len(self.range)}] : {self.description}')
                 yield x
+
+
+def xnor(x1, x2):
+    return torch.abs(1 - x1 - x2 - x1*x2)
+
